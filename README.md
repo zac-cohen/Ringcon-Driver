@@ -1,3 +1,12 @@
+# Build the project
+Configures cmake in the folder "build" using vcpkg at vcpkg/scripts/buildsystems alongside project directory
+```
+cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="${vcpkg_path}/scripts/buildsystems/vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release
+```
+Builds after cmake ran above
+```
+cmake --build build --config Release --verbose 
+```
 # Ringcon-Driver
 Play your favourite PC games with Nintendos impressive Ring fit controller system. Attach one Joycon to the Ring-Con, attach the other to your leg with the strap (herein called the strapcon). This driver converts the inputs to correspond with an Xbox 360 controller which can be used on most pc games.
 

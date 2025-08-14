@@ -1,0 +1,11 @@
+1. git clone vcpkg alongside your project directory
+2. use vcpkg in classic mode:
+a. ..\vcpkg\vcpkg.exe install hidapi:x64-windows glm:x64-windows wxwidgets:x64-windows //NOTE: This is important you DONT use x64-windows-static
+b. ..\vcpkg\vcpkg.exe install vigemclient:x86-windows vigemclient:x64-windows --overlay-ports="C:\ViGEmClient.vcpkg"
+
+3. git clone socket.io-client-cpp
+a. copy everything in src/ into your main app (alongside Main.cpp. /internal should stay in ./internal as is in /src/)
+
+
+4. cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="<path>/vcpkg/scripts/buildsystems/vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release
+5. cmake --build --config Release [--verbose]
