@@ -895,7 +895,7 @@ public:
 					break;
 			}
 			retries2++;
-			if (retries2 > 28 || res == 0) {
+			if (retries2 > 56 || res == 0) {
 				printf("Enabling IMU data...\n");
 				buf[0] = 0x01; // Enabled
 				send_subcommand(0x01, 0x40, buf, 1);
