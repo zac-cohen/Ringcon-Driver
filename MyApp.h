@@ -111,6 +111,8 @@ public:
 	wxCheckBox* CB14;
 	wxCheckBox* CB15;
 	wxCheckBox* CB16;
+	// added for run unlocks other
+	wxCheckBox* CB97;
 	// added these for reverse rx, ry
 	wxCheckBox* CB98;
 	wxCheckBox* CB99;
@@ -206,6 +208,7 @@ public:
 	void toggleRingconFix(wxCommandEvent&);
 
 	void toggleRunUnlocksGyro(wxCommandEvent&);
+	void toggleRunUnlocksOther(wxCommandEvent&);
 
 	void setGyroSensitivityX(wxCommandEvent&);
 	void setGyroSensitivityY(wxCommandEvent&);

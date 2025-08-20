@@ -80,6 +80,7 @@ int Ringcon = 0x0A;
 int prevRingcon = 0x0A;
 int ringconcounter = 0;
 
+// #define runarraylength 50
 #define runarraylength 50
 int runningindex[runarraylength] = { 0 };
 int runvalue = 0;
@@ -112,8 +113,8 @@ int MaxStick = 32767;
 
 LONG sThumbLX = 0;
 LONG sThumbLY = 0;
-SHORT sThumbRX = 0;
-SHORT sThumbRY = 0;
+LONG sThumbRX = 0;
+LONG sThumbRY = 0;
 
 bool prevlpress;
 bool prevhpress;
@@ -166,8 +167,8 @@ struct Settings {
 	bool flip_sticks = false;
 
 	// gyroscope (mouse) sensitivity:
-	float gyroSensitivityX = 150.0f;
-	float gyroSensitivityY = 150.0f;
+	float gyroSensitivityX;
+	float gyroSensitivityY;
 
 	///// Experimental /////
 	// gyroscope offset angles
@@ -230,6 +231,8 @@ struct Settings {
 
 	// running unlocks the gyro:
 	bool rununlocksgyro = false;
+	// running unlocks the other stick
+	bool runUnlocksOther = false;
 
 	// times to poll per second per joycon:
 	float pollsPerSec = 30.0f;
@@ -678,7 +681,7 @@ void handle_input(Joycon* jc, uint8_t* packet, int len) {
 			int average = 0;
 			for (int i = 0; i < runarraylength; i++) {
 				if (runningindex[i] >= 0) {
-					sum += (runningindex[i] * 2);
+					sum += (runningindex[i]); // *2);
 				}
 				else {
 					sum -= (runningindex[i] * 2); //Too many zeros means the average will be 0 even when there are quite a lot of numbers with values. This seems to be a good value with arraylength at 50.
@@ -691,12 +694,15 @@ void handle_input(Joycon* jc, uint8_t* packet, int len) {
 			//std::cout << std::to_string(sum) << std::endl;
 
 			average = sum / runarraylength;
-			if (runvalue % 1000 == 0) {
-				std::cout << "Average check" << std::endl;
-				std::cout << std::to_string(average) << std::endl;
-			}
+			//if (runvalue % 1000 == 0) {
+			//	std::cout << "Average check" << std::endl;
+			//	std::cout << std::to_string(average) << std::endl;
+			//}
 			//printf("%i\n", average); //walk 0-1, jog 1-2, run 2-3, sprint 3-4
 			if (average > 0) {
+				std::cout << std::to_string(average) << std::endl;
+				std::cout << "Running!" << std::endl;
+				//Sleep(200);
 				running = true;
 				if (settings.Runpressesbutton) {
 					jc->buttons |= 1U << 4; //sr = run
@@ -866,7 +872,8 @@ void handle_input(Joycon* jc, uint8_t* packet, int len) {
 	}
 }
 
-
+bool locked_gyro = false;
+bool applied_sensitivity = false;
 void updateVigEmDevice2(Joycon* jc) { 
 
 	UINT DevID;
@@ -1115,14 +1122,18 @@ void updateVigEmDevice2(Joycon* jc) {
 			gyroActuallyOn = true;
 		}
 
-		float mult = settings.gyroSensitivityX * 10.0f;
+		float mult = settings.gyroSensitivityX; // *10.0f;
 		int joymult = 1100; // ~32767/30 - gyro is in degrees, max forward should be 30ish degrees 1100
 
 		if (gyroActuallyOn) {
 			MC.moveRel3(relX2, relY2);
 		}
-
+		
 		if (!running && settings.rununlocksgyro) {
+			if (!locked_gyro) {
+				std::cout << "Locked Gyro" << std::endl;
+				locked_gyro = true;
+			}
 			if (settings.squatSlowsMouse && squatting) {
 				//Ignore the run unlocks gyro
 			}
@@ -1130,6 +1141,11 @@ void updateVigEmDevice2(Joycon* jc) {
 				mult = 0;
 				joymult = 0;
 			}
+		}
+		else if (running && locked_gyro) {
+			std::cout << "Unlocked Gyro" << std::endl;
+			// Sleep(1000);
+			locked_gyro = false;
 		}
 
 		if ((pitch > -5) && (pitch < 5) && running) {
@@ -1149,25 +1165,66 @@ void updateVigEmDevice2(Joycon* jc) {
 		}
 		
 		if (settings.combineJoyCons) {
-			if (ringconattached) {
-				sThumbLX = (roll * joymult * squatmousemult);
-				if (settings.RingconFullRH) {
-					sThumbLY = (yaw * joymult * squatmousemult);
+			//if (!settings.flip_sticks) {
+				if (ringconattached) {
+					sThumbLX = (roll * joymult * squatmousemult);
+					if (settings.RingconFullRH) {
+						sThumbLY = (yaw * joymult * squatmousemult);
+					}
+					else {
+						sThumbLY = (pitch * joymult * squatmousemult);
+					}
 				}
 				else {
-					sThumbLY = (pitch * joymult * squatmousemult);
+					sThumbLX = (yaw * joymult  * squatmousemult);
+					if (settings.RingconFullRH) {
+						sThumbLY = (pitch * joymult  * squatmousemult);
+					}
+					else {
+						sThumbLY = (roll * joymult * squatmousemult);
+					}
 				}
+				sThumbLY *= (settings.gyroSensitivityY + 1000) * -1.05 / 2000 + 0.5;
+				sThumbLX *= (settings.gyroSensitivityX + 1000) * -1.05 / 2000 + 0.5;
+			//}
+			//else {
+				//if (ringconattached) {
+				//	sThumbRX = (roll * joymult * squatmousemult);
+				//	if (settings.RingconFullRH) {
+				//		sThumbRY = (yaw * joymult * squatmousemult);
+				//	}
+				//	else {
+				//		sThumbRY = (pitch * joymult * squatmousemult);
+				//	}
+				//}
+				//else {
+				//	sThumbRX = (yaw * joymult * squatmousemult);
+				//	if (settings.RingconFullRH) {
+				//		sThumbRY = (pitch * joymult * squatmousemult);
+				//	}
+				//	else {
+				//		sThumbRY = (roll * joymult * squatmousemult);
+				//	}
+				//}
+				//report.wSlider = 16384 + ((Ringcon - 10) * 1640); No space on the controller for this. This is the analog version of the Ringcon.
+			//}
+		if (settings.runUnlocksOther) {
+			float othermult;
+			if (running) {
+				othermult = 1;
 			}
 			else {
-				sThumbLX = (yaw * joymult * squatmousemult);
-				if (settings.RingconFullRH) {
-					sThumbLY = (pitch * joymult * squatmousemult);
-				}
-				else {
-					sThumbLY = (roll * joymult * squatmousemult);
-				}
-				//report.wSlider = 16384 + ((Ringcon - 10) * 1640); No space on the controller for this. This is the analog version of the Ringcon.
+				othermult = 0.001;
 			}
+			//std::cout << std::to_string(sThumbRX) << std::endl;
+			//std::cout << std::to_string(sThumbRY) << std::endl;
+			//std::cout << std::to_string(othermult) << std::endl;
+			sThumbRX = sThumbRX * othermult;
+			sThumbRY = sThumbRY * othermult;
+			//std::cout << std::to_string(sThumbRX) << std::endl;
+			//std::cout << std::to_string(sThumbRY) << std::endl;
+			//Sleep(100);
+		}
 		}
 	}
 
@@ -1313,18 +1370,18 @@ void updateVigEmDevice2(Joycon* jc) {
 	}
 
 	// split up reverse settings on left vs. right
-	if (settings.reverseLX) {
-		sThumbLX = -sThumbLX;
-	}
-	if (settings.reverseRX) {
-		sThumbRX = -sThumbRX;
-	}
-	if (settings.reverseLY) {
-		sThumbLY = -sThumbLY;
-	}
-	if (settings.reverseRY) {
-		sThumbRY = -sThumbRY;
-	}
+	//if (settings.reverseLX) {
+	//	sThumbLX = -sThumbLX;
+	//}
+	//if (settings.reverseRX) {
+	//	sThumbRX = -sThumbRX;
+	//}
+	//if (settings.reverseLY) {
+	//	sThumbLY = -sThumbLY;
+	//}
+	//if (settings.reverseRY) {
+	//	sThumbRY = -sThumbRY;
+	//}
 
 
 
@@ -1339,6 +1396,16 @@ void updateVigEmDevice2(Joycon* jc) {
 	//}
 	////////////
 
+	//// Try switching sticks directly before report
+	//if (settings.flip_sticks) {
+	//	LONG temp_stick;
+	//	temp_stick = sThumbLX;
+	//	sThumbLX = sThumbRX;
+	//	sThumbRX = temp_stick;
+	//	temp_stick = sThumbLY;
+	//	sThumbLY = sThumbRY;
+	//	sThumbRY = temp_stick;
+	//}
 	//Work out what the report should be
 	if (settings.combineJoyCons) {
 		report.wButtons = remappedbtnsr + remappedbtnsl;
@@ -1368,6 +1435,18 @@ void updateVigEmDevice2(Joycon* jc) {
 		temp_stick = report.sThumbLY;
 		report.sThumbLY = report.sThumbRY;
 		report.sThumbRY = temp_stick;
+	}
+	if (settings.reverseLX) {
+		report.sThumbLX = -report.sThumbLX;
+	}
+	if (settings.reverseRX) {
+		report.sThumbRX = -report.sThumbRX;
+	}
+	if (settings.reverseLY) {
+		report.sThumbLY = -report.sThumbLY;
+	}
+	if (settings.reverseRY) {
+		report.sThumbRY = -report.sThumbRY;
 	}
 	///////////////////
 	//Send data to Vigem
@@ -1419,6 +1498,7 @@ void parseSettings2() {
 	settings.combineJoyCons = (bool)stoi(cfg["combineJoyCons"]);
 	settings.enableGyro = (bool)stoi(cfg["gyroControls"]);
 
+
 	settings.gyroSensitivityX = stof(cfg["gyroSensitivityX"]);
 	settings.gyroSensitivityY = stof(cfg["gyroSensitivityY"]);
 
@@ -1445,9 +1525,10 @@ void parseSettings2() {
 	settings.gyroscopeComboCode = stoi(cfg["gyroscopeComboCode"]);
 
 	settings.Runpressesbutton = (bool)stoi(cfg["runPressesButton"]);
-	settings.RingconFix = (bool)stoi(cfg["ringconfix"]);
+	settings.RingconFix = stoi(cfg["ringconfix"]);
 
 	settings.rununlocksgyro = (bool)stoi(cfg["rununlocksgyro"]);
+	settings.runUnlocksOther = (bool)stoi(cfg["runUnlocksOther"]);
 
 	settings.RingconFullRH = (bool)stoi(cfg["ringconfullrh"]);
 	settings.host = cfg["host"];
@@ -2236,12 +2317,16 @@ MainFrame::MainFrame() : wxFrame(NULL, wxID_ANY, wxT("Ringcon Driver by RingRunn
 	CB11 = new wxCheckBox(panel, wxID_ANY, wxT("Run Unlocks Gyro"), FromDIP(wxPoint(20, 120)));
 	CB11->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleRunUnlocksGyro, this);
 	CB11->SetValue(settings.rununlocksgyro);
+	/// Adding ability to lock the other stick that isn't the gyro
+	CB97 = new wxCheckBox(panel, wxID_ANY, wxT("Run Unlocks Other Stick"), FromDIP(wxPoint(20, 140)));
+	CB97->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleRunUnlocksOther, this);
+	CB97->SetValue(settings.runUnlocksOther);
 
 	CB9 = new wxCheckBox(panel, wxID_ANY, wxT("Run Presses Button"), FromDIP(wxPoint(190, 120)));
 	CB9->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleRunpressesbutton, this);
 	CB9->SetValue(settings.Runpressesbutton);
 
-	CB16 = new wxCheckBox(panel, wxID_ANY, wxT("Ringcon to Analog Stick"), FromDIP(wxPoint(20, 140)));
+	CB16 = new wxCheckBox(panel, wxID_ANY, wxT("Ringcon to Analog Stick"), FromDIP(wxPoint(190, 140)));
 	CB16->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleRingconToAnalog, this);
 	CB16->SetValue(settings.RingconToAnalog);
 
@@ -2481,6 +2566,10 @@ void MainFrame::setRingconFix(wxCommandEvent&) {
 
 void MainFrame::toggleRunUnlocksGyro(wxCommandEvent&) {
 	settings.rununlocksgyro = !settings.rununlocksgyro;
+}
+/// Adding ability to lock other stick
+void MainFrame::toggleRunUnlocksOther(wxCommandEvent&) {
+	settings.runUnlocksOther = !settings.runUnlocksOther;
 }
 
 /// Added this part for calibrating press/pull
