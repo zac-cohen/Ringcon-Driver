@@ -2,10 +2,11 @@
 Building
 ----
 This was built using the files as provided here, along with a specific installation of vcpkg as a sibling directory, so
-- top
-| - Ringcon-Driver
+
+| top  
+| - vcpkg  
+| - Ringcon-Drive  
 | | - Main.cpp, ...
-| - vcpkg
 
 Then, all of the references to vcpkg specifically call out that executable. It was all built using the `classic` mode of vcpkg, so no manifests.
 ----
