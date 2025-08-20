@@ -9,6 +9,7 @@ This was built using the files as provided here, along with a specific installat
 | | - Main.cpp, ...
 
 Then, all of the references to vcpkg specifically call out that executable. It was all built using the `classic` mode of vcpkg, so no manifests.
+
 ----
 Hardware
 ----
