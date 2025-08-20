@@ -111,6 +111,13 @@ public:
 	wxCheckBox* CB14;
 	wxCheckBox* CB15;
 	wxCheckBox* CB16;
+	// added for run unlocks other
+	wxCheckBox* CB97;
+	// added these for reverse rx, ry
+	wxCheckBox* CB98;
+	wxCheckBox* CB99;
+	// trying to flip right and left sticks
+	wxCheckBox* flipSticksBox;
 
 
 
@@ -130,6 +137,31 @@ public:
 	wxSpinCtrl* pitchCtrl;
 	wxSpinCtrl* rollCtrl;
 	wxSpinCtrl* yawCtrl;
+
+	wxSpinCtrl* heavyPressMinCtrl;
+	wxSpinCtrl* heavyPressMaxCtrl;
+	wxSpinCtrl* lightPressMinCtrl;
+	wxSpinCtrl* lightPressMaxCtrl;
+	wxSpinCtrl* deadZoneMinCtrl;
+	wxSpinCtrl* deadZoneMaxCtrl;
+	wxSpinCtrl* heavyPullMinCtrl;
+	wxSpinCtrl* heavyPullMaxCtrl;
+	wxSpinCtrl* lightPullMinCtrl;
+	wxSpinCtrl* lightPullMaxCtrl;
+
+	wxStaticText* heavyPressMaxText;
+	wxStaticText* heavyPressMinText;
+	wxStaticText* lightPressMaxText;
+	wxStaticText* lightPressMinText;
+	wxStaticText* deadZoneMaxText;
+	wxStaticText* deadZoneMinText;
+	wxStaticText* heavyPullMaxText;
+	wxStaticText* heavyPullMinText;
+	wxStaticText* lightPullMaxText;
+	wxStaticText* lightPullMinText;
+	wxButton* updatePressRangesButton;
+	wxButton* loadPressRangesButton;
+	wxButton* savePressRangesButton;
 
 	wxStaticText* pitchCtrlText;
 	wxStaticText* rollCtrlText;
@@ -161,6 +193,12 @@ public:
 	void toggleReverseX(wxCommandEvent&);
 	void toggleReverseY(wxCommandEvent&);
 
+	void toggleReverseLX(wxCommandEvent&);
+	void toggleReverseLY(wxCommandEvent&);
+	void toggleReverseRX(wxCommandEvent&);
+	void toggleReverseRY(wxCommandEvent&);
+
+
 	void togglePreferLeftJoyCon(wxCommandEvent&);
 	void toggleQuickToggleGyro(wxCommandEvent&);
 	void toggleInvertQuickToggle(wxCommandEvent&);
@@ -170,10 +208,13 @@ public:
 	void toggleRingconFix(wxCommandEvent&);
 
 	void toggleRunUnlocksGyro(wxCommandEvent&);
+	void toggleRunUnlocksOther(wxCommandEvent&);
 
 	void setGyroSensitivityX(wxCommandEvent&);
 	void setGyroSensitivityY(wxCommandEvent&);
 	void setRingconFix(wxCommandEvent&);
+	// flip sticks
+	void toggleFlipSticks(wxCommandEvent&);
 
 	// We're adding the ability to offset these so people can hold it however they want
 	void setGyroOffsetRoll(wxCommandEvent&);
@@ -184,7 +225,9 @@ public:
 	void toggleRingconFullRH(wxCommandEvent&);
 	void toggleRingconToAnalog(wxCommandEvent&);
 
-
+	void updatePressRanges(wxCommandEvent&);
+	void loadPressRanges(wxCommandEvent&);
+	void savePressRanges(wxCommandEvent&);
 	//void checkForUpdate();
 
 };

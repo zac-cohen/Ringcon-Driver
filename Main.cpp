@@ -10,6 +10,8 @@
 #include <iomanip>
 #include <iostream>
 #include <fstream>
+#include <filesystem>
+#include <string>
 
 #include <hidapi.h>
 
@@ -78,6 +80,7 @@ int Ringcon = 0x0A;
 int prevRingcon = 0x0A;
 int ringconcounter = 0;
 
+// #define runarraylength 50
 #define runarraylength 50
 int runningindex[runarraylength] = { 0 };
 int runvalue = 0;
@@ -110,8 +113,28 @@ int MaxStick = 32767;
 
 LONG sThumbLX = 0;
 LONG sThumbLY = 0;
-SHORT sThumbRX = 0;
-SHORT sThumbRY = 0;
+LONG sThumbRX = 0;
+LONG sThumbRY = 0;
+
+bool prevlpress;
+bool prevhpress;
+bool prevlpull;
+bool prevhpull;
+
+
+
+#include <windows.h>
+#include <iostream>
+
+void AttachConsoleIfNeeded() {
+	AllocConsole();  // create a console window
+	freopen("CONOUT$", "w", stdout);
+	freopen("CONOUT$", "w", stderr);
+	std::cout.clear();
+	std::cerr.clear();
+
+	std::cout << "Current working directory: " << std::filesystem::current_path() << std::endl;
+}
 
 struct Settings {
 
@@ -123,8 +146,15 @@ struct Settings {
 	// JoyCon(L) and JoyCon(R) are mapped to Vigem Device #1
 	bool combineJoyCons = false;
 
-	bool reverseX = false;// reverses joystick x (both sticks)
-	bool reverseY = false;// reverses joystick y (both sticks)
+	/////// Original code
+	//bool reverseX = false;// reverses joystick x (both sticks)
+	//bool reverseY = false;// reverses joystick y (both sticks)
+	///////
+
+	bool reverseLX = false; // reverse the stick used for movement by default on x
+	bool reverseLY = false; // reverse the stick used for movement by default on y
+	bool reverseRX = false; // reverse the stick used for camera by default on x
+	bool reverseRY = false; // reverse the stick used for camera by default on y
 
 	bool usingGrip = false;
 	bool usingBluetooth = true;
@@ -134,9 +164,11 @@ struct Settings {
 	bool enableGyro = false;
 	bool squatSlowsMouse = false;
 
+	bool flip_sticks = false;
+
 	// gyroscope (mouse) sensitivity:
-	float gyroSensitivityX = 150.0f;
-	float gyroSensitivityY = 150.0f;
+	float gyroSensitivityX;
+	float gyroSensitivityY;
 
 	///// Experimental /////
 	// gyroscope offset angles
@@ -145,7 +177,7 @@ struct Settings {
 	int gyroOffsetYaw = 0;
 	////////////////////////
 
-	///// Experimental /////
+	///// End Experimental /////
 	
 	// prefer the left joycon for gyro controls
 	bool preferLeftJoyCon = false;
@@ -199,6 +231,8 @@ struct Settings {
 
 	// running unlocks the gyro:
 	bool rununlocksgyro = false;
+	// running unlocks the other stick
+	bool runUnlocksOther = false;
 
 	// times to poll per second per joycon:
 	float pollsPerSec = 30.0f;
@@ -207,7 +241,28 @@ struct Settings {
 	float timeToSleepMS = 1.0f;
 
 	// version number
-	std::string version = "1.03";
+	std::string version = "1.04";
+
+
+	// Adding settings for configuring the press/pull/dead zone values
+	// get rid of magic numbers
+
+	// These are non-RH mode values. see RH mode for new values under that configuration
+	int max_heavy_press; //by default this doesn't need assignment
+	int min_heavy_press = 0x11;
+
+	int max_light_press = 0x10;
+	int min_light_press = 0x0C;
+
+	int max_deadzone = 0x0B;
+	int min_deadzone = 0x08;
+
+	int max_light_pull = 0x07;
+	int min_light_pull = 0x04;
+
+	int max_heavy_pull = 0x03;
+	int min_heavy_pull = 0x01; // this is implicit because we don't allow 0x00, but it'll be useful in RH mode
+
 
 } settings;
 
@@ -380,11 +435,11 @@ void handle_input(Joycon* jc, uint8_t* packet, int len) {
 				//27-28 Pitch centred at horizontal - up = -, down = +
 				//29-30 Pitch centred at vertical - up = -, down = +
 				//31-32, 33-34, 35-36 arebouncing around but have something to do with the gyro. maybe i need a single byte?
-				printf("%f      %f     %f", jc->gyro.roll, jc->gyro.yaw, jc->gyro.pitch);
+				//printf("%f      %f     %f", jc->gyro.roll, jc->gyro.yaw, jc->gyro.pitch);
 			}
 		}
 		else {
-
+			//std::cout << "Handle left gyro" << std::endl;
 			// get roll:
 			jc->gyro.roll = (float)((uint16_to_int16(packet[19] | (packet[20] << 8) & 0xFF00)) - jc->sensor_cal[1][0]) * jc->gyro_cal_coeff[0]; //23 24 was working, now not so much
 
@@ -393,6 +448,26 @@ void handle_input(Joycon* jc, uint8_t* packet, int len) {
 
 			// get yaw:
 			jc->gyro.yaw = (float)((uint16_to_int16(packet[23] | (packet[24] << 8) & 0xFF00)) - jc->sensor_cal[1][2]) * jc->gyro_cal_coeff[2]; // 21 22 was working
+			//std::cout << "Roll " + std::to_string(jc->gyro.roll) << std::endl;
+			//std::cout << "Pitch " + std::to_string(jc->gyro.pitch) << std::endl;
+			//std::cout << "Yaw " + std::to_string(jc->gyro.yaw) << std::endl;
+
+			//std::cout << "Accel" << std::endl;
+			//std::cout << "X " + std::to_string(jc->accel.x) << std::endl;
+			//std::cout << "Y " + std::to_string(jc->accel.y) << std::endl;
+			//std::cout << "Z " + std::to_string(jc->accel.z) << std::endl;
+			//std::cout << "Pause " << std::endl;
+
+			//float c;
+			//std::cout << "Curiosity" << std::endl;
+			//c = (float)((uint16_to_int16(packet[35] | (packet[36] << 8) & 0xFF00)) - jc->sensor_cal[1][0]) * jc->gyro_cal_coeff[0];
+			//std::cout << "Roll? " + std::to_string(c) << std::endl;
+			//c = (float)((uint16_to_int16(packet[31] | (packet[32] << 8) & 0xFF00)) - jc->sensor_cal[1][0]) * jc->gyro_cal_coeff[0];
+			//std::cout << "Pitch? " + std::to_string(c) << std::endl;
+			//c = (float)((uint16_to_int16(packet[33] | (packet[34] << 8) & 0xFF00)) - jc->sensor_cal[1][0]) * jc->gyro_cal_coeff[0];
+			//std::cout << "Yaw? " + std::to_string(c) << std::endl;
+			//	Sleep(1000);
+			//}
 		}
 
 		// offsets:
@@ -422,21 +497,37 @@ void handle_input(Joycon* jc, uint8_t* packet, int len) {
 		
 		// These are non-RH mode values. see RH mode for new values under that configuration
 		// int max_heavy_press = 0xFF;
-		int min_heavy_press = 0x11;
+		//int min_heavy_press = 0x11;
 
-		int max_light_press = 0x10;
-		int min_light_press = 0x0C;
+		//int max_light_press = 0x10;
+		//int min_light_press = 0x0C;
 
-		int max_deadzone = 0x0B;
-		int min_deadzone = 0x08;
+		//int max_deadzone = 0x0B;
+		//int min_deadzone = 0x08;
 
-		int max_light_pull = 0x07;
-		int min_light_pull = 0x04;
+		//int max_light_pull = 0x07;
+		//int min_light_pull = 0x04;
 
-		int max_heavy_pull = 0x03;
-		int min_heavy_pull = 0x01; // this is implicit because we don't allow 0x00, but it'll be useful in RH mode
+		//int max_heavy_pull = 0x03;
+		//int min_heavy_pull = 0x01; // this is implicit because we don't allow 0x00, but it'll be useful in RH mode
 
-		
+		//if (settings.RingconFullRH) {
+		//	// We need to reset these variables to the rotated range, so pull and press are inverted
+		//	settings.max_heavy_pull = 0x0F;
+		//	settings.min_heavy_pull = 0x0D;
+
+		//	settings.max_light_pull = 0x0C;
+		//	settings.min_light_pull = 0x0B;
+		//	// for some reason by default these are shifted by 1 from non-RH
+		//	settings.max_deadzone = 0x0A;
+		//	settings.min_deadzone = 0x07;
+
+		//	settings.max_light_press = 0x06;
+		//	settings.min_light_press = 0x02;
+
+		//	settings.max_heavy_press = 0x01;
+		//	// min_heavy_press = 0x00;
+		//}
 
 
 		// right:
@@ -458,27 +549,14 @@ void handle_input(Joycon* jc, uint8_t* packet, int len) {
 			if (Ringcon != prevRingcon) {
 				printf("%i\n", Ringcon);
 			}
-			
+
+			/////
+			// TODO: Add a function which enables user to calibrate pressing sensitivity
+			/////
 			if (settings.RingconFullRH) { //The sensor readings change if it is being held sideways
-				// We need to reset these variables to the rotated range, so pull and press are inverted
-				
-				max_heavy_pull = 0x0F;
-				min_heavy_pull = 0x0D;
-				
-				max_light_pull = 0x0C;
-				min_light_pull = 0x0B;
-				// for some reason by default these are shifted by 1 from non-RH
-				max_deadzone = 0x0A;
-				min_deadzone = 0x07;
-
-				max_light_press = 0x06;
-				min_light_press = 0x02;
-
-				int max_heavy_press = 0x01;
-				// min_heavy_press = 0x00;
 
 				//if (Ringcon == 0x0A || Ringcon == 0x09 || Ringcon == 0x08 || Ringcon == 0x07) { 
-				if (Ringcon <= max_deadzone && Ringcon >= min_deadzone) {//Deadzone
+				if (Ringcon <= settings.max_deadzone && Ringcon >= settings.min_deadzone) {//Deadzone
 					ringconcounter = 0;
 				}
 				// why is this so large
@@ -487,18 +565,18 @@ void handle_input(Joycon* jc, uint8_t* packet, int len) {
 					//ringconcounter = -1;
 				}
 				// gonna try having heavy press in RH mode
-				if (Ringcon <= max_heavy_press) {
+				if (Ringcon <= settings.max_heavy_press) {
 					heavypress = true;
 					ringconcounter = -1;
 				}
 
 				// if (Ringcon == 0x0D || Ringcon == 0x0E || Ringcon == 0x0F) {
-				if (Ringcon >= min_heavy_pull && Ringcon <= max_heavy_pull) {
+				if (Ringcon >= settings.min_heavy_pull && Ringcon <= settings.max_heavy_pull) {
 					heavypull = true;
 					ringconcounter = -1;
 				}
 				//if (Ringcon >= 0x02 && Ringcon <= 0x06 && ringconcounter != -1) {
-				if (Ringcon >= min_light_press && Ringcon <= max_light_press && ringconcounter != -1) {
+				if (Ringcon >= settings.min_light_press && Ringcon <= settings.max_light_press && ringconcounter != -1) {
 					/*if (Ringcon < prevringcon && ringconcounter < 10) {
 						ringconcounter = 0;
 					}
@@ -511,7 +589,7 @@ void handle_input(Joycon* jc, uint8_t* packet, int len) {
 					//}
 				}
 				// if (Ringcon <= 0x0C && Ringcon >= 0x0B && ringconcounter != -1) {
-				if (Ringcon >= min_light_pull && Ringcon <= max_light_pull) {
+				if (Ringcon >= settings.min_light_pull && Ringcon <= settings.max_light_pull) {
 					if (Ringcon > prevRingcon && ringconcounter < 10) {
 						ringconcounter = 0;
 					}
@@ -526,23 +604,23 @@ void handle_input(Joycon* jc, uint8_t* packet, int len) {
 			}
 			else {
 				// if (Ringcon == 0x0A || Ringcon == 0x09 || Ringcon == 0x08 || Ringcon == 0x0B) { //Deadzone
-				if (Ringcon >= min_deadzone && Ringcon <= max_deadzone) {//Deadzone
+				if (Ringcon >= settings.min_deadzone && Ringcon <= settings.max_deadzone) {//Deadzone
 					ringconcounter = 0;
 				}
 
 				//if (Ringcon >= 0x11) {
-				if (Ringcon >= min_heavy_press) {
+				if (Ringcon >= settings.min_heavy_press) {
 					heavypress = true;
 					ringconcounter = -1;
 				}
 				//if (Ringcon <= 0x03 && Ringcon != 0x00) {
-				if (Ringcon <= max_heavy_pull && Ringcon != 0x00) {
+				if (Ringcon <= settings.max_heavy_pull && Ringcon != 0x00) {
 					heavypull = true;
 					ringconcounter = -1;
 				}
 
 				// if (Ringcon >= 0x0C && Ringcon <= 0x10 && ringconcounter != -1) {
-				if (Ringcon >= min_light_press && Ringcon <= max_light_press && ringconcounter != -1) {
+				if (Ringcon >= settings.min_light_press && Ringcon <= settings.max_light_press && ringconcounter != -1) {
 					if (Ringcon > prevRingcon && ringconcounter < 10) {
 						ringconcounter = 0;
 					}
@@ -555,7 +633,7 @@ void handle_input(Joycon* jc, uint8_t* packet, int len) {
 					}
 				}
 				// if (Ringcon <= 0x07 && Ringcon >= 0x04 && ringconcounter != -1) {
-				if (Ringcon <= max_light_pull && Ringcon >= min_light_pull && ringconcounter != -1) {
+				if (Ringcon <= settings.max_light_pull && Ringcon >= settings.min_light_pull && ringconcounter != -1) {
 					if (Ringcon < prevRingcon && ringconcounter < 10) {
 						ringconcounter = 0;
 					}
@@ -568,32 +646,63 @@ void handle_input(Joycon* jc, uint8_t* packet, int len) {
 					}
 				}
 			}
+			if (heavypress!=prevhpress) {
+				printf("Heavypress");
+			}
+			if (lightpress!=prevlpress) {
+				printf("Lightpress");
+			}
+			if (heavypull!=prevhpull) {
+				printf("Heavypull");
+			}
+			if (lightpull!=prevlpull) {
+				printf("Lightpull");
+			}
 
 			prevRingcon = Ringcon;
+			prevhpress = heavypress;
+			prevlpress = lightpress;
+			prevhpull = heavypull;
+			prevlpull = lightpull;
 			//printf("%i \n\n", Ringcon);
 		}
 
 		// left:
 		if (jc->left_right == 1) {
 
+			/////// Original Code /////
 			// Determine whether the left joycon is telling us we are running
 			runningindex[runvalue % runarraylength] = jc->gyro.pitch;
+			if (runvalue % 100 == 0) {
+				std::cout << std::to_string(jc->gyro.pitch) << std::endl;
+			}
 			runvalue++;
 			int sum = 0;
 			int average = 0;
 			for (int i = 0; i < runarraylength; i++) {
 				if (runningindex[i] >= 0) {
-					sum += (runningindex[i] * 2);
+					sum += (runningindex[i]); // *2);
 				}
 				else {
 					sum -= (runningindex[i] * 2); //Too many zeros means the average will be 0 even when there are quite a lot of numbers with values. This seems to be a good value with arraylength at 50.
 				}
 			}
+			//// original code printed when sum positive
+			//if (sum > 0) {
+			//	std::cout << std::to_string(sum) << std::endl;
+			//}
+			//std::cout << std::to_string(sum) << std::endl;
 
 			average = sum / runarraylength;
-
+			//if (runvalue % 1000 == 0) {
+			//	std::cout << "Average check" << std::endl;
+			//	std::cout << std::to_string(average) << std::endl;
+			//}
 			//printf("%i\n", average); //walk 0-1, jog 1-2, run 2-3, sprint 3-4
 			if (average > 0) {
+				std::cout << std::to_string(average) << std::endl;
+				std::cout << "Running!" << std::endl;
+				//Sleep(200);
 				running = true;
 				if (settings.Runpressesbutton) {
 					jc->buttons |= 1U << 4; //sr = run
@@ -763,7 +872,8 @@ void handle_input(Joycon* jc, uint8_t* packet, int len) {
 	}
 }
 
-
+bool locked_gyro = false;
+bool applied_sensitivity = false;
 void updateVigEmDevice2(Joycon* jc) { 
 
 	UINT DevID;
@@ -1012,14 +1122,18 @@ void updateVigEmDevice2(Joycon* jc) {
 			gyroActuallyOn = true;
 		}
 
-		float mult = settings.gyroSensitivityX * 10.0f;
+		float mult = settings.gyroSensitivityX; // *10.0f;
 		int joymult = 1100; // ~32767/30 - gyro is in degrees, max forward should be 30ish degrees 1100
 
 		if (gyroActuallyOn) {
 			MC.moveRel3(relX2, relY2);
 		}
-
+		
 		if (!running && settings.rununlocksgyro) {
+			if (!locked_gyro) {
+				std::cout << "Locked Gyro" << std::endl;
+				locked_gyro = true;
+			}
 			if (settings.squatSlowsMouse && squatting) {
 				//Ignore the run unlocks gyro
 			}
@@ -1027,6 +1141,11 @@ void updateVigEmDevice2(Joycon* jc) {
 				mult = 0;
 				joymult = 0;
 			}
+		}
+		else if (running && locked_gyro) {
+			std::cout << "Unlocked Gyro" << std::endl;
+			// Sleep(1000);
+			locked_gyro = false;
 		}
 
 		if ((pitch > -5) && (pitch < 5) && running) {
@@ -1044,27 +1163,68 @@ void updateVigEmDevice2(Joycon* jc) {
 		if (Ringcon == 0x0A || Ringcon == 0x09 || Ringcon == 0x08 || Ringcon == 0x0B) { //Deadzone
 			Ringcon = 10;
 		}
-
+		
 		if (settings.combineJoyCons) {
-			if (ringconattached) {
-				sThumbLX = (roll * joymult * squatmousemult);
-				if (settings.RingconFullRH) {
-					sThumbLY = (yaw * joymult * squatmousemult);
+			//if (!settings.flip_sticks) {
+				if (ringconattached) {
+					sThumbLX = (roll * joymult * squatmousemult);
+					if (settings.RingconFullRH) {
+						sThumbLY = (yaw * joymult * squatmousemult);
+					}
+					else {
+						sThumbLY = (pitch * joymult * squatmousemult);
+					}
 				}
 				else {
-					sThumbLY = (pitch * joymult * squatmousemult);
+					sThumbLX = (yaw * joymult  * squatmousemult);
+					if (settings.RingconFullRH) {
+						sThumbLY = (pitch * joymult  * squatmousemult);
+					}
+					else {
+						sThumbLY = (roll * joymult * squatmousemult);
+					}
 				}
+				sThumbLY *= (settings.gyroSensitivityY + 1000) * -1.05 / 2000 + 0.5;
+				sThumbLX *= (settings.gyroSensitivityX + 1000) * -1.05 / 2000 + 0.5;
+			//}
+			//else {
+				//if (ringconattached) {
+				//	sThumbRX = (roll * joymult * squatmousemult);
+				//	if (settings.RingconFullRH) {
+				//		sThumbRY = (yaw * joymult * squatmousemult);
+				//	}
+				//	else {
+				//		sThumbRY = (pitch * joymult * squatmousemult);
+				//	}
+				//}
+				//else {
+				//	sThumbRX = (yaw * joymult * squatmousemult);
+				//	if (settings.RingconFullRH) {
+				//		sThumbRY = (pitch * joymult * squatmousemult);
+				//	}
+				//	else {
+				//		sThumbRY = (roll * joymult * squatmousemult);
+				//	}
+				//}
+				//report.wSlider = 16384 + ((Ringcon - 10) * 1640); No space on the controller for this. This is the analog version of the Ringcon.
+			//}
+		if (settings.runUnlocksOther) {
+			float othermult;
+			if (running) {
+				othermult = 1;
 			}
 			else {
-				sThumbLX = (yaw * joymult * squatmousemult);
-				if (settings.RingconFullRH) {
-					sThumbLY = (pitch * joymult * squatmousemult);
-				}
-				else {
-					sThumbLY = (roll * joymult * squatmousemult);
-				}
-				//report.wSlider = 16384 + ((Ringcon - 10) * 1640); No space on the controller for this. This is the analog version of the Ringcon.
+				othermult = 0.001;
 			}
+			//std::cout << std::to_string(sThumbRX) << std::endl;
+			//std::cout << std::to_string(sThumbRY) << std::endl;
+			//std::cout << std::to_string(othermult) << std::endl;
+			sThumbRX = sThumbRX * othermult;
+			sThumbRY = sThumbRY * othermult;
+			//std::cout << std::to_string(sThumbRX) << std::endl;
+			//std::cout << std::to_string(sThumbRY) << std::endl;
+			//Sleep(100);
+		}
 		}
 	}
 
@@ -1152,6 +1312,9 @@ void updateVigEmDevice2(Joycon* jc) {
 				remappedbtnsl += XINPUT_GAMEPAD_BACK;
 			}
 		}
+		// TODO: Config Press/Pull
+		// Add in an options menu to choose how to map the presses
+		// Possibly add interactive window to show what is being pressed
 		if (jc->left_right == 2) {
 			remappedbtnsr = 0;
 			if (jc->btns.sr) { //Lightpull
@@ -1192,7 +1355,6 @@ void updateVigEmDevice2(Joycon* jc) {
 			}
 		}
 	}
-
 	//Normalize sticks
 	if (sThumbLX >= MaxStick) {
 		sThumbLX = MaxStick;
@@ -1207,15 +1369,43 @@ void updateVigEmDevice2(Joycon* jc) {
 		sThumbLY = -MaxStick;
 	}
 
-	if (settings.reverseX) {
-		sThumbLX = -sThumbLX;
-		sThumbRX = -sThumbRX;
-	}
-	if (settings.reverseY) {
-		sThumbLY = -sThumbLY;
-		sThumbRY = -sThumbRY;
-	}
+	// split up reverse settings on left vs. right
+	//if (settings.reverseLX) {
+	//	sThumbLX = -sThumbLX;
+	//}
+	//if (settings.reverseRX) {
+	//	sThumbRX = -sThumbRX;
+	//}
+	//if (settings.reverseLY) {
+	//	sThumbLY = -sThumbLY;
+	//}
+	//if (settings.reverseRY) {
+	//	sThumbRY = -sThumbRY;
+	//}
 
+
+
+	//////////// Original code
+	//if (settings.reverseX) {
+	//	sThumbLX = -sThumbLX;
+	//	sThumbRX = -sThumbRX;
+	//}
+	//if (settings.reverseY) {
+	//	sThumbLY = -sThumbLY;
+	//	sThumbRY = -sThumbRY;
+	//}
+	////////////
+
+	//// Try switching sticks directly before report
+	//if (settings.flip_sticks) {
+	//	LONG temp_stick;
+	//	temp_stick = sThumbLX;
+	//	sThumbLX = sThumbRX;
+	//	sThumbRX = temp_stick;
+	//	temp_stick = sThumbLY;
+	//	sThumbLY = sThumbRY;
+	//	sThumbRY = temp_stick;
+	//}
 	//Work out what the report should be
 	if (settings.combineJoyCons) {
 		report.wButtons = remappedbtnsr + remappedbtnsl;
@@ -1235,7 +1425,30 @@ void updateVigEmDevice2(Joycon* jc) {
 			report.sThumbRY = sThumbRY;
 		}
 	}
-
+	///////////// TODO: Test flip_sticks ///////////
+	//// Trying to switch what the sticks do ////
+	if (settings.flip_sticks) {
+		LONG temp_stick;
+		temp_stick = report.sThumbLX;
+		report.sThumbLX = report.sThumbRX;
+		report.sThumbRX = temp_stick;
+		temp_stick = report.sThumbLY;
+		report.sThumbLY = report.sThumbRY;
+		report.sThumbRY = temp_stick;
+	}
+	if (settings.reverseLX) {
+		report.sThumbLX = -report.sThumbLX;
+	}
+	if (settings.reverseRX) {
+		report.sThumbRX = -report.sThumbRX;
+	}
+	if (settings.reverseLY) {
+		report.sThumbLY = -report.sThumbLY;
+	}
+	if (settings.reverseRY) {
+		report.sThumbRY = -report.sThumbRY;
+	}
+	///////////////////
 	//Send data to Vigem
 	if (jc->VigemNumber == 1) {
 		if (settings.combineJoyCons) {
@@ -1269,16 +1482,22 @@ void updateVigEmDevice2(Joycon* jc) {
 
 
 
-
+void PrintConfig(const std::map<std::string, std::string>& cfg) {
+	std::cout << "Printing cfg" << std::endl;
+	for (const auto& [key, value] : cfg) {
+		std::cout << key << " = " << value << std::endl;
+	}
+}
 
 void parseSettings2() {
-
+	std::cout << "Parsing settings" << std::endl;
 	//setupConsole("Debug");
-
 	std::map<std::string, std::string> cfg = LoadConfig("config.txt");
 
+	PrintConfig(cfg);
 	settings.combineJoyCons = (bool)stoi(cfg["combineJoyCons"]);
 	settings.enableGyro = (bool)stoi(cfg["gyroControls"]);
+
 
 	settings.gyroSensitivityX = stof(cfg["gyroSensitivityX"]);
 	settings.gyroSensitivityY = stof(cfg["gyroSensitivityY"]);
@@ -1286,8 +1505,16 @@ void parseSettings2() {
 	settings.squatSlowsMouse = (bool)stoi(cfg["squatSlowsMouse"]);
 	settings.marioTheme = (bool)stoi(cfg["marioTheme"]);
 
-	settings.reverseX = (bool)stoi(cfg["reverseX"]);
-	settings.reverseY = (bool)stoi(cfg["reverseY"]);
+	/// original code
+	//settings.reverseX = (bool)stoi(cfg["reverseX"]);
+	//settings.reverseY = (bool)stoi(cfg["reverseY"]);
+	/////
+
+	// new individual reverses
+	settings.reverseLX = (bool)stoi(cfg["reverseLX"]);
+	settings.reverseLY = (bool)stoi(cfg["reverseLY"]);
+	settings.reverseRX = (bool)stoi(cfg["reverseRX"]);
+	settings.reverseRY = (bool)stoi(cfg["reverseRY"]);
 
 	settings.preferLeftJoyCon = (bool)stoi(cfg["preferLeftJoyCon"]);
 	settings.quickToggleGyro = (bool)stoi(cfg["quickToggleGyro"]);
@@ -1298,9 +1525,10 @@ void parseSettings2() {
 	settings.gyroscopeComboCode = stoi(cfg["gyroscopeComboCode"]);
 
 	settings.Runpressesbutton = (bool)stoi(cfg["runPressesButton"]);
-	settings.RingconFix = (bool)stoi(cfg["ringconfix"]);
+	settings.RingconFix = stoi(cfg["ringconfix"]);
 
 	settings.rununlocksgyro = (bool)stoi(cfg["rununlocksgyro"]);
+	settings.runUnlocksOther = (bool)stoi(cfg["runUnlocksOther"]);
 
 	settings.RingconFullRH = (bool)stoi(cfg["ringconfullrh"]);
 	settings.host = cfg["host"];
@@ -1982,6 +2210,8 @@ bool MyApp::OnInit() {
 	if (!wxApp::OnInit()) {
 		return false;
 	}
+	parseSettings2();
+	AttachConsoleIfNeeded();
 	//wxMessageBox("Connect");
 	Connect(wxID_ANY, wxEVT_IDLE, wxIdleEventHandler(MyApp::onIdle));
 	auto mainFrame = new MainFrame();
@@ -2048,12 +2278,31 @@ MainFrame::MainFrame() : wxFrame(NULL, wxID_ANY, wxT("Ringcon Driver by RingRunn
 	CB1->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleCombine, this);
 	CB1->SetValue(settings.combineJoyCons);
 
-	CB6 = new wxCheckBox(panel, wxID_ANY, wxT("Reverse Stick X"), FromDIP(wxPoint(20, 40)));
-	CB6->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleReverseX, this);
-	CB6->SetValue(settings.reverseX);
-	CB7 = new wxCheckBox(panel, wxID_ANY, wxT("Reverse Stick Y"), FromDIP(wxPoint(190, 40)));
-	CB7->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleReverseY, this);
-	CB7->SetValue(settings.reverseY);
+	/////////// Original reverse code
+	//CB6 = new wxCheckBox(panel, wxID_ANY, wxT("Reverse Stick X"), FromDIP(wxPoint(20, 40)));
+	//CB6->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleReverseX, this);
+	//CB6->SetValue(settings.reverseX);
+	//CB7 = new wxCheckBox(panel, wxID_ANY, wxT("Reverse Stick Y"), FromDIP(wxPoint(190, 40)));
+	//CB7->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleReverseY, this);
+	//CB7->SetValue(settings.reverseY);
+	///////////
+
+	// Individualized reverse code
+	CB6 = new wxCheckBox(panel, wxID_ANY, wxT("Reverse Stick LX"), FromDIP(wxPoint(20, 40)));
+	CB6->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleReverseLX, this);
+	CB6->SetValue(settings.reverseLX);
+
+	CB7 = new wxCheckBox(panel, wxID_ANY, wxT("Reverse Stick LY"), FromDIP(wxPoint(190, 40)));
+	CB7->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleReverseLY, this);
+	CB7->SetValue(settings.reverseLY);
+
+	CB98 = new wxCheckBox(panel, wxID_ANY, wxT("Reverse Stick RX"), FromDIP(wxPoint(20, 55)));
+	CB98->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleReverseRX, this);
+	CB98->SetValue(settings.reverseRX);
+
+	CB99 = new wxCheckBox(panel, wxID_ANY, wxT("Reverse Stick RY"), FromDIP(wxPoint(190, 55)));
+	CB99->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleReverseRY, this);
+	CB99->SetValue(settings.reverseRY);
 
 	st1 = new wxStaticText(panel, wxID_ANY, wxT("RINGCON/STRAPCON OPTIONS"), FromDIP(wxPoint(20, 80)));
 
@@ -2068,12 +2317,16 @@ MainFrame::MainFrame() : wxFrame(NULL, wxID_ANY, wxT("Ringcon Driver by RingRunn
 	CB11 = new wxCheckBox(panel, wxID_ANY, wxT("Run Unlocks Gyro"), FromDIP(wxPoint(20, 120)));
 	CB11->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleRunUnlocksGyro, this);
 	CB11->SetValue(settings.rununlocksgyro);
+	/// Adding ability to lock the other stick that isn't the gyro
+	CB97 = new wxCheckBox(panel, wxID_ANY, wxT("Run Unlocks Other Stick"), FromDIP(wxPoint(20, 140)));
+	CB97->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleRunUnlocksOther, this);
+	CB97->SetValue(settings.runUnlocksOther);
 
 	CB9 = new wxCheckBox(panel, wxID_ANY, wxT("Run Presses Button"), FromDIP(wxPoint(190, 120)));
 	CB9->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleRunpressesbutton, this);
 	CB9->SetValue(settings.Runpressesbutton);
 
-	CB16 = new wxCheckBox(panel, wxID_ANY, wxT("Ringcon to Analog Stick"), FromDIP(wxPoint(20, 140)));
+	CB16 = new wxCheckBox(panel, wxID_ANY, wxT("Ringcon to Analog Stick"), FromDIP(wxPoint(190, 140)));
 	CB16->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleRingconToAnalog, this);
 	CB16->SetValue(settings.RingconToAnalog);
 
@@ -2119,21 +2372,66 @@ MainFrame::MainFrame() : wxFrame(NULL, wxID_ANY, wxT("Ringcon Driver by RingRunn
 	slider2 = new wxSlider(panel, wxID_ANY, settings.gyroSensitivityY, -1000, 1000, FromDIP(wxPoint(180, 320)), FromDIP(wxSize(150, 20)), wxSL_LABELS);
 	slider2->Bind(wxEVT_SLIDER, &MainFrame::setGyroSensitivityY, this);
 
+	//////////////TODO Test flip_sticks
+	/// add flip sticks checkbox
+	flipSticksBox = new wxCheckBox(panel, wxID_ANY, wxT("Flip Left/Right sticks"), FromDIP(wxPoint(20, 360)));
+	flipSticksBox->Bind(wxEVT_COMMAND_CHECKBOX_CLICKED, &MainFrame::toggleFlipSticks, this);
+	flipSticksBox->SetValue(settings.flip_sticks);
+	/////////////
+
+	///// Configure press ranges /////
+	heavyPressMinText = new wxStaticText(panel, wxID_ANY, wxT("Heavy Press Minimum"), FromDIP(wxPoint(20, 380)));
+	heavyPressMaxText = new wxStaticText(panel, wxID_ANY, wxT("Heavy Press Maximum"), FromDIP(wxPoint(250, 380)));
+
+	lightPressMinText = new wxStaticText(panel, wxID_ANY, wxT("Light Press Minimum"), FromDIP(wxPoint(20, 400)));
+	lightPressMaxText = new wxStaticText(panel, wxID_ANY, wxT("Light Press Maximum"), FromDIP(wxPoint(250, 400)));
+
+	deadZoneMinText = new wxStaticText(panel, wxID_ANY, wxT("Dead Zone Minimum"), FromDIP(wxPoint(20, 420)));
+	deadZoneMaxText = new wxStaticText(panel, wxID_ANY, wxT("Dead Zone Maximum"), FromDIP(wxPoint(250, 420)));
+
+	heavyPullMinText = new wxStaticText(panel, wxID_ANY, wxT("Heavy Pull Minimum"), FromDIP(wxPoint(20, 440)));
+	heavyPullMaxText = new wxStaticText(panel, wxID_ANY, wxT("Heavy Pull Maximum"), FromDIP(wxPoint(250, 440)));
+
+	lightPullMinText = new wxStaticText(panel, wxID_ANY, wxT("Light Pull Minimum"), FromDIP(wxPoint(20, 460)));
+	lightPullMaxText = new wxStaticText(panel, wxID_ANY, wxT("Light Pull Maximum"), FromDIP(wxPoint(250, 460)));
+
+
+	heavyPressMinCtrl = new wxSpinCtrl(panel, wxID_ANY, wxString::Format("%d", settings.min_heavy_press), FromDIP(wxPoint(145, 380)), FromDIP(wxSize(100, 20)), wxSP_ARROW_KEYS, 0, 20, 0);
+	heavyPressMaxCtrl = new wxSpinCtrl(panel, wxID_ANY, wxString::Format("%d", settings.max_heavy_press), FromDIP(wxPoint(380, 380)), FromDIP(wxSize(100, 20)), wxSP_ARROW_KEYS, 0, 20, 0);
+	lightPressMinCtrl = new wxSpinCtrl(panel, wxID_ANY, wxString::Format("%d", settings.min_light_press), FromDIP(wxPoint(145, 400)), FromDIP(wxSize(100, 20)), wxSP_ARROW_KEYS, 0, 20, 0);
+	lightPressMaxCtrl = new wxSpinCtrl(panel, wxID_ANY, wxString::Format("%d", settings.max_light_press), FromDIP(wxPoint(380, 400)), FromDIP(wxSize(100, 20)), wxSP_ARROW_KEYS, 0, 20, 0);
+	
+	deadZoneMinCtrl = new wxSpinCtrl(panel, wxID_ANY, wxString::Format("%d", settings.min_deadzone), FromDIP(wxPoint(145, 420)), FromDIP(wxSize(100, 20)), wxSP_ARROW_KEYS, 0, 20, 0);
+	deadZoneMaxCtrl = new wxSpinCtrl(panel, wxID_ANY, wxString::Format("%d", settings.max_deadzone), FromDIP(wxPoint(380, 420)), FromDIP(wxSize(100, 20)), wxSP_ARROW_KEYS, 0, 20, 0);
+
+	heavyPullMinCtrl = new wxSpinCtrl(panel, wxID_ANY, wxString::Format("%d", settings.min_heavy_pull), FromDIP(wxPoint(145, 440)), FromDIP(wxSize(100, 20)), wxSP_ARROW_KEYS, 0, 20, 0);
+	heavyPullMaxCtrl = new wxSpinCtrl(panel, wxID_ANY, wxString::Format("%d", settings.max_heavy_pull), FromDIP(wxPoint(380, 440)), FromDIP(wxSize(100, 20)), wxSP_ARROW_KEYS, 0, 20, 0);
+	lightPullMinCtrl = new wxSpinCtrl(panel, wxID_ANY, wxString::Format("%d", settings.min_light_pull), FromDIP(wxPoint(145, 460)), FromDIP(wxSize(100, 20)), wxSP_ARROW_KEYS, 0, 20, 0);
+	lightPullMaxCtrl = new wxSpinCtrl(panel, wxID_ANY, wxString::Format("%d", settings.max_light_pull), FromDIP(wxPoint(380, 460)), FromDIP(wxSize(100, 20)), wxSP_ARROW_KEYS, 0, 20, 0);
+
+	updatePressRangesButton = new wxButton(panel, wxID_EXIT, wxT("Update Ranges"), FromDIP(wxPoint(20, 480)));
+	updatePressRangesButton->Bind(wxEVT_BUTTON, &MainFrame::updatePressRanges, this);
+	loadPressRangesButton = new wxButton(panel, wxID_EXIT, wxT("Load Ranges"), FromDIP(wxPoint(120, 480)));
+	loadPressRangesButton->Bind(wxEVT_BUTTON, &MainFrame::loadPressRanges, this);
+	savePressRangesButton = new wxButton(panel, wxID_EXIT, wxT("Save Ranges"), FromDIP(wxPoint(280, 480)));
+	savePressRangesButton->Bind(wxEVT_BUTTON, &MainFrame::savePressRanges, this);
+	////
+
 	//Added pitch,roll,yaw texts
-	pitchCtrlText = new wxStaticText(panel, wxID_ANY, wxT("Gyro Pitch Offset"), FromDIP(wxPoint(20,380)));
-	rollCtrlText = new wxStaticText(panel, wxID_ANY, wxT("Gyro Roll Offset"), FromDIP(wxPoint(20,400))); 
-	yawCtrlText = new wxStaticText(panel, wxID_ANY, wxT("Gyro Yaw Offset"), FromDIP(wxPoint(20,420))); 
+	//pitchCtrlText = new wxStaticText(panel, wxID_ANY, wxT("Gyro Pitch Offset"), FromDIP(wxPoint(20,380)));
+	//rollCtrlText = new wxStaticText(panel, wxID_ANY, wxT("Gyro Roll Offset"), FromDIP(wxPoint(20,400))); 
+	//yawCtrlText = new wxStaticText(panel, wxID_ANY, wxT("Gyro Yaw Offset"), FromDIP(wxPoint(20,420))); 
 
-	//wxSpinCtrl* pitchCtrl = new wxSpinCtrl(panel, wxID_ANY, "", FromDIP(wxPoint(20,380)), FromDIP(wxSize(150, 20))), wxSP_ARROW_KEYS, 0, 359, 0);
-	pitchCtrl = new wxSpinCtrl(panel, wxID_ANY, wxT(""), FromDIP(wxPoint(180,380)), FromDIP(wxSize(150, 20)), wxSP_ARROW_KEYS, 0, 359, 0);
-	//wxSpinCtrl* rollCtrl = new wxSpinCtrl(panel, wxID_ANY, "", FromDIP(wxPoint(400)), FromDIP(wxSize(150, 20))), wxSP_ARROW_KEYS, 0, 359, 0);
-	rollCtrl = new wxSpinCtrl(panel, wxID_ANY, wxT(""), FromDIP(wxPoint(180,400)), FromDIP(wxSize(150, 20)), wxSP_ARROW_KEYS, 0, 359, 0);
-	//wxSpinCtrl* yawCtrl = new wxSpinCtrl(panel, wxID_ANY, "", FromDIP(wxPoint(420)), FromDIP(wxSize(150, 20))), wxSP_ARROW_KEYS, 0, 359, 0);
-	yawCtrl = new wxSpinCtrl(panel, wxID_ANY, wxT(""), FromDIP(wxPoint(180,420)), FromDIP(wxSize(150, 20)), wxSP_ARROW_KEYS, 0, 359, 0);
+	////wxSpinCtrl* pitchCtrl = new wxSpinCtrl(panel, wxID_ANY, "", FromDIP(wxPoint(20,380)), FromDIP(wxSize(150, 20))), wxSP_ARROW_KEYS, 0, 359, 0);
+	//pitchCtrl = new wxSpinCtrl(panel, wxID_ANY, wxT(""), FromDIP(wxPoint(180,380)), FromDIP(wxSize(150, 20)), wxSP_ARROW_KEYS, 0, 359, 0);
+	////wxSpinCtrl* rollCtrl = new wxSpinCtrl(panel, wxID_ANY, "", FromDIP(wxPoint(400)), FromDIP(wxSize(150, 20))), wxSP_ARROW_KEYS, 0, 359, 0);
+	//rollCtrl = new wxSpinCtrl(panel, wxID_ANY, wxT(""), FromDIP(wxPoint(180,400)), FromDIP(wxSize(150, 20)), wxSP_ARROW_KEYS, 0, 359, 0);
+	////wxSpinCtrl* yawCtrl = new wxSpinCtrl(panel, wxID_ANY, "", FromDIP(wxPoint(420)), FromDIP(wxSize(150, 20))), wxSP_ARROW_KEYS, 0, 359, 0);
+	//yawCtrl = new wxSpinCtrl(panel, wxID_ANY, wxT(""), FromDIP(wxPoint(180,420)), FromDIP(wxSize(150, 20)), wxSP_ARROW_KEYS, 0, 359, 0);
 
-	pitchCtrl->Bind(wxEVT_SPINCTRL, &MainFrame::setGyroOffsetPitch, this);
-	rollCtrl->Bind(wxEVT_SPINCTRL, &MainFrame::setGyroOffsetRoll, this);
-	yawCtrl->Bind(wxEVT_SPINCTRL, &MainFrame::setGyroOffsetYaw, this);
+	//pitchCtrl->Bind(wxEVT_SPINCTRL, &MainFrame::setGyroOffsetPitch, this);
+	//rollCtrl->Bind(wxEVT_SPINCTRL, &MainFrame::setGyroOffsetRoll, this);
+	//yawCtrl->Bind(wxEVT_SPINCTRL, &MainFrame::setGyroOffsetYaw, this);
 
 	gyroComboCodeText = new wxStaticText(panel, wxID_ANY, wxT("Gyro Combo Code: "), FromDIP(wxPoint(20, 320)));
 
@@ -2143,19 +2441,19 @@ MainFrame::MainFrame() : wxFrame(NULL, wxID_ANY, wxT("Ringcon Driver by RingRunn
 	//version.Printf("JoyCon-Driver version %s\n", settings.version);
 	//st2 = new wxStaticText(panel, wxID_ANY, version, FromDIP(wxPoint(20, 330)));
 
-	startButton = new wxButton(panel, wxID_EXIT, wxT("Start"), FromDIP(wxPoint(150, 440)));
+	startButton = new wxButton(panel, wxID_EXIT, wxT("Start"), FromDIP(wxPoint(150, 500)));
 	startButton->Bind(wxEVT_BUTTON, &MainFrame::onStart, this);
 
-	quitButton = new wxButton(panel, wxID_EXIT, wxT("Quit"), FromDIP(wxPoint(250, 440)));
+	quitButton = new wxButton(panel, wxID_EXIT, wxT("Quit"), FromDIP(wxPoint(250, 500)));
 	quitButton->Bind(wxEVT_BUTTON, &MainFrame::onQuit, this);
 
 	//updateButton = new wxButton(panel, wxID_EXIT, wxT("Check for update"), FromDIP(wxPoint(18, 360)));
 	//updateButton->Bind(wxEVT_BUTTON, &MainFrame::onUpdate, this);
 
-	donateButton = new wxButton(panel, wxID_EXIT, wxT("Donate"), FromDIP(wxPoint(50, 440)));
+	donateButton = new wxButton(panel, wxID_EXIT, wxT("Donate"), FromDIP(wxPoint(50, 500)));
 	donateButton->Bind(wxEVT_BUTTON, &MainFrame::onDonate, this);
 
-	(SetClientSize(FromDIP(360), FromDIP(420)));
+	(SetClientSize(FromDIP(500), FromDIP(600)));
 	//wxMessageBox("showing");
 	Show();
 
@@ -2198,6 +2496,10 @@ void MainFrame::toggleGyro(wxCommandEvent&) {
 	settings.enableGyro = !settings.enableGyro;
 }
 
+void MainFrame::toggleFlipSticks(wxCommandEvent&) {
+	settings.flip_sticks = !settings.flip_sticks;
+}
+
 void MainFrame::toggleSquatSlowsMouse(wxCommandEvent&) {
 	settings.squatSlowsMouse = !settings.squatSlowsMouse;
 }
@@ -2206,14 +2508,38 @@ void MainFrame::toggleMario(wxCommandEvent&) {
 	settings.marioTheme = !settings.marioTheme;
 }
 
-void MainFrame::toggleReverseX(wxCommandEvent&) {
-	settings.reverseX = !settings.reverseX;
+/// Original reverse code
+//void MainFrame::toggleReverseX(wxCommandEvent&) {
+//	settings.reverseX = !settings.reverseX;
+//}
+//
+//void MainFrame::toggleReverseY(wxCommandEvent&) {
+//	settings.reverseY = !settings.reverseY;
+//}
+//////
+
+/////// Individualized reverse
+void MainFrame::toggleReverseLX(wxCommandEvent&) {
+	std::cout << "Reversing LX" << std::endl;
+	settings.reverseLX = !settings.reverseLX;
 }
 
-void MainFrame::toggleReverseY(wxCommandEvent&) {
-	settings.reverseY = !settings.reverseY;
+void MainFrame::toggleReverseLY(wxCommandEvent&) {
+	std::cout << "Reversing LY" << std::endl;
+	settings.reverseLY = !settings.reverseLY;
 }
 
+void MainFrame::toggleReverseRX(wxCommandEvent&) {
+	std::cout << "Reversing RX" << std::endl;
+	settings.reverseRX = !settings.reverseRX;
+}
+
+void MainFrame::toggleReverseRY(wxCommandEvent&) {
+	std::cout << "Reversing RY" << std::endl;
+	settings.reverseRY = !settings.reverseRY;
+}
+
+/////////////
 void MainFrame::togglePreferLeftJoyCon(wxCommandEvent&) {
 	settings.preferLeftJoyCon = !settings.preferLeftJoyCon;
 }
@@ -2241,6 +2567,85 @@ void MainFrame::setRingconFix(wxCommandEvent&) {
 void MainFrame::toggleRunUnlocksGyro(wxCommandEvent&) {
 	settings.rununlocksgyro = !settings.rununlocksgyro;
 }
+/// Adding ability to lock other stick
+void MainFrame::toggleRunUnlocksOther(wxCommandEvent&) {
+	settings.runUnlocksOther = !settings.runUnlocksOther;
+}
+
+/// Added this part for calibrating press/pull
+
+void MainFrame::updatePressRanges(wxCommandEvent&) {
+	settings.max_heavy_pull = heavyPullMaxCtrl->GetValue();
+	settings.min_heavy_pull = heavyPullMinCtrl->GetValue();
+
+	settings.max_light_pull = lightPullMaxCtrl->GetValue();
+	settings.min_light_pull = lightPullMinCtrl->GetValue();
+	// for some reason by default these are shifted by 1 from non-RH
+	settings.max_deadzone = deadZoneMaxCtrl->GetValue();
+	settings.min_deadzone = deadZoneMinCtrl->GetValue();
+
+	settings.max_light_press = lightPressMaxCtrl->GetValue();
+	settings.min_light_press = lightPressMinCtrl->GetValue();
+
+	settings.max_heavy_press = heavyPressMaxCtrl->GetValue();
+	settings.min_heavy_press = heavyPressMinCtrl->GetValue();
+}
+
+void MainFrame::loadPressRanges(wxCommandEvent&) {
+	std::map<std::string, std::string> press_cfg = LoadConfig("press_config.txt");
+	settings.max_heavy_pull = stoi(press_cfg["max_heavy_pull"]);
+	settings.min_heavy_pull = stoi(press_cfg["min_heavy_pull"]);
+
+	settings.max_light_pull = stoi(press_cfg["max_light_pull"]);
+	settings.min_light_pull = stoi(press_cfg["min_light_pull"]);
+	// for some reason by default these are shifted by 1 from non-RH
+	settings.max_deadzone = stoi(press_cfg["max_deadzone"]);
+	settings.min_deadzone = stoi(press_cfg["min_deadzone"]);
+
+	settings.max_light_press = stoi(press_cfg["max_light_press"]);
+	settings.min_light_press = stoi(press_cfg["min_light_press"]);
+
+	settings.max_heavy_press = stoi(press_cfg["max_heavy_press"]);
+	settings.min_heavy_press = stoi(press_cfg["min_heavy_press"]);
+
+
+	/// Refresh the screen
+	heavyPullMaxCtrl->SetValue(settings.max_heavy_pull);
+	heavyPullMinCtrl->SetValue(settings.min_heavy_pull);
+
+	lightPullMaxCtrl->SetValue(settings.max_light_pull);
+	lightPullMinCtrl->SetValue(settings.min_light_pull);
+	// for some reason by default these are shifted by 1 from non-RH
+	deadZoneMaxCtrl->SetValue(settings.max_deadzone);
+	deadZoneMinCtrl->SetValue(settings.min_deadzone);
+
+	lightPressMaxCtrl->SetValue(settings.max_light_press);
+	lightPressMinCtrl->SetValue(settings.min_light_press);
+
+	heavyPressMaxCtrl->SetValue(settings.max_heavy_press);
+	heavyPressMinCtrl->SetValue(settings.min_heavy_press);
+}
+
+void MainFrame::savePressRanges(wxCommandEvent&) {
+	std::ofstream press_cfg;
+	press_cfg.open("press_config.txt");
+	press_cfg << "max_heavy_pull: \"" + std::to_string(settings.max_heavy_pull) + "\"\n";
+	press_cfg << "min_heavy_pull: \"" + std::to_string(settings.min_heavy_pull) + "\"\n";
+
+	press_cfg << "max_light_pull: \"" + std::to_string(settings.max_light_pull) + "\"\n";
+	press_cfg << "min_light_pull: \"" + std::to_string(settings.min_light_pull) + "\"\n";
+
+	press_cfg << "max_deadzone: \"" + std::to_string(settings.max_deadzone) + "\"\n";
+	press_cfg << "min_deadzone: \"" + std::to_string(settings.min_deadzone) + "\"\n";
+
+	press_cfg << "max_light_press: \"" + std::to_string(settings.max_light_press) + "\"\n";
+	press_cfg << "min_light_press: \"" + std::to_string(settings.min_light_press) + "\"\n";
+
+	press_cfg << "max_heavy_press: \"" + std::to_string(settings.max_heavy_press) + "\"\n";
+	press_cfg << "min_heavy_press: \"" + std::to_string(settings.min_heavy_press) + "\"\n";
+	press_cfg.close();
+}
+////////
 
 void MainFrame::setGyroSensitivityX(wxCommandEvent&) {
 	settings.gyroSensitivityX = slider1->GetValue();
@@ -2265,7 +2670,55 @@ void MainFrame::setGyroOffsetYaw(wxCommandEvent&) {
 /////
 
 void MainFrame::toggleRingconFullRH(wxCommandEvent&) {
+	wxCommandEvent dummy;
+	// original code
 	settings.RingconFullRH = !settings.RingconFullRH;
+	/// we need to update the min/max settings for pull/press here
+	if (!settings.RingconFullRH) {
+		// These are non-RH mode values. see RH mode for new values under that configuration
+		settings.max_heavy_press; //by default this doesn't need assignment
+		settings.min_heavy_press = 0x11;
+
+		settings.max_light_press = 0x10;
+		settings.min_light_press = 0x0C;
+
+		settings.max_deadzone = 0x0B;
+		settings.min_deadzone = 0x08;
+
+		settings.max_light_pull = 0x07;
+		settings.min_light_pull = 0x04;
+
+		settings.max_heavy_pull = 0x03;
+		settings.min_heavy_pull = 0x01; // this is implicit because we don't allow 0x00, but it'll be useful in RH mode
+	}
+	else {
+		// We need to reset these variables to the rotated range, so pull and press are inverted
+		settings.max_heavy_pull = 0x0F;
+		settings.min_heavy_pull = 0x0D;
+
+		settings.max_light_pull = 0x0C;
+		settings.min_light_pull = 0x0B;
+		// for some reason by default these are shifted by 1 from non-RH
+		settings.max_deadzone = 0x0A;
+		settings.min_deadzone = 0x07;
+
+		settings.max_light_press = 0x06;
+		settings.min_light_press = 0x02;
+
+		settings.max_heavy_press = 0x01;
+		// min_heavy_press = 0x00;
+	}
+	heavyPullMaxCtrl->SetValue(settings.max_heavy_pull);
+	heavyPullMinCtrl->SetValue(settings.min_heavy_pull);
+	lightPullMaxCtrl->SetValue(settings.max_light_pull);
+	lightPullMinCtrl->SetValue(settings.min_light_pull);
+	deadZoneMaxCtrl->SetValue(settings.max_deadzone);
+	deadZoneMinCtrl->SetValue(settings.min_deadzone);
+	heavyPressMaxCtrl->SetValue(settings.max_heavy_press);
+	heavyPressMinCtrl->SetValue(settings.min_heavy_press);
+	lightPressMaxCtrl->SetValue(settings.max_light_press);
+	lightPressMinCtrl->SetValue(settings.min_light_press);
+	updatePressRanges(dummy);
 }
 
 void MainFrame::toggleRingconToAnalog(wxCommandEvent&) {
