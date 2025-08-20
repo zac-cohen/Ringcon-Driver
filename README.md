@@ -1,3 +1,18 @@
+# Pre-Requisites
+Building
+----
+This was built using the files as provided here, along with a specific installation of vcpkg as a sibling directory, so
+- top
+| - Ringcon-Driver
+| | - Main.cpp, ...
+| - vcpkg
+
+Then, all of the references to vcpkg specifically call out that executable. It was all built using the `classic` mode of vcpkg, so no manifests.
+----
+Hardware
+----
+Make sure you've installed the firmware on the joycons you want to use, so you'll have to have launched Ringfit with them attached to your switch at some point prior to this application working.
+
 # Build the project
 Configures cmake in the folder "build" using vcpkg at vcpkg/scripts/buildsystems alongside project directory
 ```
@@ -7,6 +22,18 @@ Builds after cmake ran above
 ```
 cmake --build build --config Release --verbose 
 ```
+
+# Updated Version
+The updates I've made (zac-cohen) are specifically with playing Skyrim in mind. The goal was:
+- Use FullRH mode to have access to the buttons
+- Re-map the walk/run from the gyro to the stick
+- Have manual calibration of the push/pull because I want access to do heavy press with the Ringcon sideways due to the button limitations (NOTE: Still be extremely careful. My personal setting has heavy press start from 6 and below. I try to stick to just hitting 6 when I need it, but be very careful going lower than that)
+- 
+
+
+----
+Original ReadMe
+----
 # Ringcon-Driver
 Play your favourite PC games with Nintendos impressive Ring fit controller system. Attach one Joycon to the Ring-Con, attach the other to your leg with the strap (herein called the strapcon). This driver converts the inputs to correspond with an Xbox 360 controller which can be used on most pc games.
 
