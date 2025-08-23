@@ -539,8 +539,9 @@ void handle_input(Joycon* jc, uint8_t* packet, int len) {
 			if (Ringcon == 0x00) { //The Ringcon reading has started randomly putting zero in to the reading, I must not be initializing it properly. This is a hack to get around that.
 				Ringcon = prevRingcon;
 			}
-
-			Ringcon = Ringcon + settings.RingconFix;
+			else {
+				Ringcon = Ringcon + settings.RingconFix;
+			}
 
 			if (Ringcon >= 100) {
 				Ringcon = Ringcon - 255;
@@ -681,7 +682,7 @@ void handle_input(Joycon* jc, uint8_t* packet, int len) {
 			int average = 0;
 			for (int i = 0; i < runarraylength; i++) {
 				if (runningindex[i] >= 0) {
-					sum += (runningindex[i]); // *2);
+					sum += (runningindex[i] * 2);
 				}
 				else {
 					sum -= (runningindex[i] * 2); //Too many zeros means the average will be 0 even when there are quite a lot of numbers with values. This seems to be a good value with arraylength at 50.
